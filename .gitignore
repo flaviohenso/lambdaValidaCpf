@@ -1,0 +1,26 @@
+##############################
+## history
+##############################
+.history
+
+##############################
+## node
+##############################
+node_modules
+npm-debug.log
+yarn-error.log
+
+##############################
+## terraform
+##############################
+.terraform/
+terraform.tfstate
+terraform.tfstate.backup
+*.tfvars
+
+##############################
+## docker
+##############################
+*.log
+docker-compose.override.yml
+.env
