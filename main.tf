@@ -1,34 +1,13 @@
 provider "aws" {
-  region = "us-west-1"  # Defina a região apropriada
-}
-
-# Cluster do Amazon DocumentDB
-resource "aws_docdb_cluster" "docdb_cluster" {
-  cluster_identifier      = "documentdb-cluster"
-  master_username         = var.db_user
-  master_password         = var.db_password
-  skip_final_snapshot     = true
-}
-
-resource "aws_docdb_cluster_instance" "docdb_instance" {
-  count            = 2
-  identifier       = "docdb-instance-${count.index}"
-  cluster_identifier = aws_docdb_cluster.docdb_cluster.id
-  instance_class   = "db.r5.large"  # Ajuste o tipo da instância conforme necessário
-  apply_immediately = true
-}
-
-# Subnet Group para o DocumentDB
-resource "aws_docdb_subnet_group" "docdb_subnet_group" {
-  name       = "my-docdb-subnet-group"
-  subnet_ids = aws_subnet.my_subnet[*].id
+  region = "us-east-1"  # Defina a região apropriada
+  profile = "my-profile"
 }
 
 # Função Lambda
 resource "aws_lambda_function" "functionValidaCpf" {
   function_name = "cpf-verification-lambda"
   role          = aws_iam_role.lambda_exec_role.arn
-  handler       = "index.lambdaHandler"   # Handler para o Node.js
+  handler       = "index.handler"   # Handler para o Node.js
   runtime       = "nodejs20.x"
 
   filename      = "lambda.zip"            # O arquivo ZIP com seu código
@@ -36,17 +15,15 @@ resource "aws_lambda_function" "functionValidaCpf" {
 
   environment {
     variables = {
-      DOCUMENTDB_URI = aws_docdb_cluster.docdb_cluster.endpoint
+      DOCUMENTDB_URI = "mongodb://fiap:qZ7zqQn1j4QVMd9i@mongodb-fiap-tech-challenge.cluster-cpsw6q668tdw.us-east-1.docdb.amazonaws.com:27017/fiap?ssl=true&replicaSet=rs0&readPreference=secondaryPreferred&retryWrites=false"
       DB_NAME        = var.db_name
     }
   }
 
   vpc_config {
-    subnet_ids         = aws_subnet.my_subnet[*].id
+    subnet_ids         = ["subnet-0115b6d08158577bf", "subnet-0754183aca138c7aa"]
     security_group_ids = [aws_security_group.lambda_sg.id]
   }
-
-  depends_on = [aws_iam_role_policy_attachment.lambda_logging]
 }
 
 # IAM Role para a Lambda
@@ -66,10 +43,33 @@ resource "aws_iam_role" "lambda_exec_role" {
   })
 }
 
-# Permissões de Log para a Lambda (CloudWatch)
-resource "aws_iam_role_policy_attachment" "lambda_logging" {
+# Política IAM com permissões adicionais para Lambda em VPC
+resource "aws_iam_policy" "lambda_vpc_policy" {
+  name        = "lambda-vpc-policy"
+  description = "Permissões necessárias para a Lambda funcionar dentro de uma VPC"
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect   = "Allow",
+        Action   = [
+          "ec2:CreateNetworkInterface",
+          "ec2:DescribeNetworkInterfaces",
+          "ec2:DeleteNetworkInterface",
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+        ],
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+# Anexar a política à Role
+resource "aws_iam_role_policy_attachment" "lambda_vpc_attachment" {
   role       = aws_iam_role.lambda_exec_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+  policy_arn = aws_iam_policy.lambda_vpc_policy.arn
 }
 
 # Configuração da VPC e Subnets
@@ -89,22 +89,5 @@ resource "aws_security_group" "lambda_sg" {
     protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
-}
-
-resource "aws_subnet" "my_subnet" {
-  count = 2
-  vpc_id            = aws_vpc.main_vpc.id
-  cidr_block        = cidrsubnet(aws_vpc.main_vpc.cidr_block, 8, count.index)
-  availability_zone = element(data.aws_availability_zones.available.names, count.index)
-}
-
-# VPC
-resource "aws_vpc" "main_vpc" {
-  cidr_block = "10.0.0.0/16"
-}
-
-# Subnet para o DocumentDB
-resource "aws_docdb_subnet_group" "docdb_subnet_group" {
-  name       = "my-docdb-subnet-group"
-  subnet_ids = aws_subnet.my_subnet[*].id
+  
 }
